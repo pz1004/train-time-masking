@@ -1,0 +1,21 @@
+[dataset]
+source = "openml"
+openml_id = 150
+fetch_name = "covertype"
+version = 3
+parser = "auto"
+data_home = "/tmp/skdata"
+primary_dataset = "covertype"
+label_column = "class"
+positive_label = "2"
+negative_label = "not_2"
+deduplicate_feature_rows = true
+categorical_inference = "dtype_category_or_object"
+categorical_columns = []
+
+[regime]
+sample_size_band = "large numerical binary reduction with scripted missingness overlays"
+categorical_features = false
+numerical_features = true
+missingness_pressure = "scripted_overlay_only"
+imbalance_band = "mild"

@@ -1,0 +1,21 @@
+[dataset]
+source = "openml"
+openml_id = 1590
+fetch_name = "adult"
+version = 2
+parser = "auto"
+data_home = "/tmp/skdata"
+primary_dataset = "adult"
+label_column = "class"
+positive_label = ">50K"
+negative_label = "<=50K"
+missing_token = "?"
+deduplicate_feature_rows = true
+categorical_inference = "dtype_category_or_object"
+
+[regime]
+sample_size_band = "binary classification with controlled missing-at-random and informative-missingness overlays on a public tabular dataset"
+categorical_features = true
+numerical_features = true
+missingness_pressure = "real_literal_missing_tokens"
+imbalance_band = "mild_to_moderate"

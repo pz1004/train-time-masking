@@ -1,0 +1,29 @@
+[robustness]
+kind = "test_only_missingness_overlay"
+columns = ["V2", "V3", "V7"]
+mask_only_observed_values = true
+
+[[slice]]
+name = "missingness_10"
+kind = "missingness"
+severity = "low"
+additional_mask_rate = 0.1
+
+[[slice]]
+name = "missingness_20"
+kind = "missingness"
+severity = "moderate"
+additional_mask_rate = 0.2
+
+[[slice]]
+name = "missingness_30"
+kind = "missingness"
+severity = "high"
+additional_mask_rate = 0.3
+
+[mar]
+driver_column = "V1"
+target_columns = ["V7"]
+low_rate = 0.05
+high_rate = 0.35
+threshold_quantile = 0.5

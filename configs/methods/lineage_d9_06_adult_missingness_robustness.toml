@@ -1,0 +1,28 @@
+[method]
+name = "mask_augmented_imputation_training"
+status = "implemented"
+implementation_module = "lab.methods.mait_missingness_robustness"
+primary_objective = "Train a neural mask-augmented imputation model with stochastic feature masking, reconstruction loss, and optional missingness indicators to improve robustness under scripted missingness overlays without widening claims beyond the audited protocol."
+
+[training]
+architecture = "mait_mlp"
+uses_missingness_indicators = true
+uses_validation_calibration = false
+hidden_dim_1 = 256
+hidden_dim_2 = 128
+dropout = 0.1
+learning_rate = 0.001
+weight_decay = 0.0001
+batch_size = 512
+max_epochs = 60
+early_stopping_patience = 8
+reconstruction_weight = 1.0
+
+[augmentation]
+copy_mode = "stochastic_masking"
+columns_source = "robustness_config"
+mask_rates = [0.1, 0.2, 0.3]
+mask_only_observed_values = true
+
+[calibration]
+method = "sigmoid"

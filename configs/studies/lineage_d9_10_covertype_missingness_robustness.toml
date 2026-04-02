@@ -1,0 +1,25 @@
+[study]
+id = "lineage_d9_10_covertype_missingness_robustness"
+task_family = "tabular"
+task_type = "binary classification"
+status = "method_complete"
+
+[paths]
+research_dir = "research/studies/lineage_d9_10_covertype_missingness_robustness"
+results_dir = "results/lineage_d9_10_covertype_missingness_robustness"
+paper_dir = "paper/lineage_d9_10_covertype_missingness_robustness"
+
+[config_refs]
+dataset = "configs/datasets/lineage_d9_10_covertype_missingness_robustness.toml"
+protocol = "configs/protocols/lineage_d9_06_adult_missingness_robustness.toml"
+baselines = "configs/baselines/lineage_d9_10_covertype_missingness_robustness.toml"
+method = "configs/methods/lineage_d9_06_adult_missingness_robustness.toml"
+ablations = "configs/ablations/lineage_d9_06_adult_missingness_robustness.toml"
+robustness = "configs/robustness/lineage_d9_10_covertype_missingness_robustness.toml"
+reporting = "configs/reporting/lineage_d9_06_adult_missingness_robustness.toml"
+
+[execution]
+seed_list = [7, 19, 31, 43, 59, 71, 83, 97, 109, 127, 149, 167, 181, 199, 211, 233, 251, 269, 283, 307]
+primary_metric = "AUROC"
+calibration_metric = "ece"
+active_stages = ["run_baselines", "run_method", "run_ablations", "evaluate_robustness", "evaluate_calibration", "aggregate_results", "make_tables", "make_figures", "audit_results"]

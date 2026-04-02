@@ -1,0 +1,8 @@
+[reporting]
+primary_table = "main_results"
+robustness_table = "robustness_results"
+calibration_table = "calibration_results"
+performance_figure = "performance_overview"
+calibration_figure = "calibration_overview"
+robustness_figure = "robustness_overview"
+audit_report = "results_audit"

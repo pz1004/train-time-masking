@@ -1,0 +1,17 @@
+[[ablation]]
+name = "remove_missingness_indicators"
+expectation = "tests whether explicit missingness cues drive the effect"
+
+[[ablation]]
+name = "enable_calibration_head"
+expectation = "tests whether re-enabling the validation-fit post-hoc sigmoid calibrator helps or hurts the revised main method"
+
+[[ablation]]
+name = "mlp_only"
+expectation = "tests whether the same backbone retains the effect without stochastic masking, reconstruction, or missingness indicators"
+use_missingness_indicators = false
+use_calibration = false
+enable_reconstruction = false
+reconstruction_weight = 0.0
+use_stochastic_masking = false
+mask_rates = [0.0]

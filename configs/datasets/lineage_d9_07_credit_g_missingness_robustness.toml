@@ -1,0 +1,20 @@
+[dataset]
+source = "openml"
+openml_id = 31
+fetch_name = "credit-g"
+version = 1
+parser = "auto"
+data_home = "/tmp/skdata"
+primary_dataset = "credit-g"
+label_column = "class"
+positive_label = "bad"
+negative_label = "good"
+deduplicate_feature_rows = true
+categorical_inference = "dtype_category_or_object"
+
+[regime]
+sample_size_band = "small mixed-type binary classification with scripted missingness overlays"
+categorical_features = true
+numerical_features = true
+missingness_pressure = "scripted_overlay_only"
+imbalance_band = "moderate"

@@ -1,0 +1,15 @@
+[split]
+strategy = "repeated_stratified_holdout"
+train_fraction = 0.7
+validation_fraction = 0.15
+test_fraction = 0.15
+seeds = [7, 19, 31, 43, 59, 71, 83, 97, 109, 127, 149, 167, 181, 199, 211, 233, 251, 269, 283, 307]
+
+[preprocessing]
+fit_scope = "train_only"
+missingness_indicators = true
+calibration_fit_scope = "validation_only"
+
+[tuning]
+selection_metric = "auroc"
+report_metrics = ["auroc", "brier", "ece", "log_loss"]
