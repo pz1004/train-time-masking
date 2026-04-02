@@ -1,8 +1,6 @@
 # When Does Train-Time Masking Help?
 
-Official code and compact reproducibility bundle for the paper:
-
-**When Does Train-Time Masking Help? A Leakage-Controlled Robustness Audit of Tabular Classifiers Under Feature Missingness**
+Official code and compact reproducibility bundle for the paper (TBD).
 
 ## Overview
 
@@ -97,10 +95,3 @@ The most useful paper-backed outputs in this release are:
 - `results/<study>/mask_sweep/mask_sweep.json`
 - `results/<study>/lambda_sweep/lambda_sweep.json`
 
-## Manuscript Source
-
-`access.tex` is included for traceability. Compiling it requires the official IEEE Access template files, including `ieeeaccess.cls`, which are not bundled in this snapshot.
-
-## Release Note
-
-This staged public repository does not add a license automatically. Add your intended `LICENSE` file before publishing if you want downstream reuse to be explicitly permitted.
