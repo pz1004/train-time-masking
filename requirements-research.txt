@@ -9,3 +9,7 @@ catboost
 xgboost
 torch
 pytorch-tabnet
+tabpfn
+# The FT-Transformer-style baseline is implemented locally with PyTorch.
+rtdl-revisiting-models @ git+https://github.com/yandex-research/rtdl-revisiting-models.git#subdirectory=package
+ 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 
 import matplotlib
@@ -40,7 +41,9 @@ OVERLAY_RATES = [0, 10, 20, 30]
 
 
 def load_summary(study_id: str) -> dict | None:
-    path = ROOT / "results" / study_id / "aggregated" / "performance_summary.json"
+    prefix = os.environ.get("LAB_RESULTS_DIR_PREFIX", "").strip()
+    results_folder = f"{prefix}_{study_id}" if prefix else study_id
+    path = ROOT / "results" / results_folder / "aggregated" / "performance_summary.json"
     if not path.exists():
         return None
     with path.open() as f:

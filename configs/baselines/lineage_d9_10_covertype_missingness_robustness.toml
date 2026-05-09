@@ -66,3 +66,30 @@ learning_rate = 0.05
 subsample = 0.8
 colsample_bytree = 0.8
 n_jobs = 4
+
+[[baseline]]
+name = "ft_transformer"
+family = "deep_tabular"
+handles_categorical = false
+implementation = "lab.baselines.tabular.FTTransformerModule"
+uses_validation_split = true
+token_dim = 32
+n_heads = 4
+n_layers = 2
+dropout = 0.1
+learning_rate = 0.001
+weight_decay = 0.0001
+batch_size = 1024
+max_epochs = 60
+early_stopping_patience = 8
+device = "cuda_if_available"
+
+[[baseline]]
+name = "tabpfn"
+family = "tabular_foundation_model"
+handles_categorical = false
+implementation = "tabpfn.TabPFNClassifier"
+uses_validation_split = false
+max_train_rows = 10000
+device = "auto"
+allow_constant_fallback = true

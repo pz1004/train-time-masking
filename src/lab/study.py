@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import Any
 import tomllib
+
+
+RESULTS_DIR_PREFIX_ENV = "LAB_RESULTS_DIR_PREFIX"
 
 
 class StudyConfigError(RuntimeError):
@@ -29,6 +33,19 @@ def resolve_repo_path(raw_path: str, *, base_dir: Path) -> Path:
         return local_candidate
 
     return (repo_root() / candidate).resolve()
+
+
+def apply_results_dir_prefix(results_dir: Path, prefix: str | None) -> Path:
+    if not prefix:
+        return results_dir
+    normalized_prefix = prefix.strip()
+    if not normalized_prefix:
+        return results_dir
+    if "/" in normalized_prefix or "\\" in normalized_prefix:
+        raise StudyConfigError(
+            f"{RESULTS_DIR_PREFIX_ENV} must be a folder-name prefix, not a path: {normalized_prefix!r}"
+        )
+    return results_dir.with_name(f"{normalized_prefix}_{results_dir.name}")
 
 
 @dataclass(frozen=True)
@@ -144,7 +161,10 @@ def load_study_spec(study_config_path: str | Path) -> StudySpec:
         raise StudyConfigError(f"No seeds defined in {config_path}")
 
     research_dir = resolve_repo_path(str(paths["research_dir"]), base_dir=config_path.parent)
-    results_dir = resolve_repo_path(str(paths["results_dir"]), base_dir=config_path.parent)
+    results_dir = apply_results_dir_prefix(
+        resolve_repo_path(str(paths["results_dir"]), base_dir=config_path.parent),
+        os.environ.get(RESULTS_DIR_PREFIX_ENV),
+    )
     paper_dir = resolve_repo_path(str(paths["paper_dir"]), base_dir=config_path.parent)
 
     return StudySpec(

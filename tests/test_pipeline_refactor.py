@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
+import json
+import numpy as np
 import tempfile
+from types import SimpleNamespace
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -8,6 +13,8 @@ from unittest import mock
 import pandas as pd
 
 from lab import pipeline
+from lab.evaluation.metrics import select_threshold_by_validation_f1, thresholded_classification_metrics
+from lab.evaluation.robustness import apply_mar_overlay, apply_mnar_overlay, default_structured_overlay_configs
 from lab.pipeline_audit import _audit_markdown
 from lab.pipeline_outputs import (
     BASELINE_ARTIFACT_FILES,
@@ -19,10 +26,19 @@ from lab.pipeline_outputs import (
     _write_run_artifacts,
 )
 from lab.reporting import build_prediction_frame
-from lab.study import StudySpec
+from lab.study import StudyConfigError, StudySpec, apply_results_dir_prefix
 
 
 class PipelineRefactorTests(unittest.TestCase):
+    def test_results_dir_prefix_updates_folder_name_only(self) -> None:
+        results_dir = Path("/tmp/repo/results/lineage_demo")
+        self.assertEqual(
+            apply_results_dir_prefix(results_dir, "20260502_120000_revision_full"),
+            Path("/tmp/repo/results/20260502_120000_revision_full_lineage_demo"),
+        )
+        with self.assertRaises(StudyConfigError):
+            apply_results_dir_prefix(results_dir, "nested/prefix")
+
     def test_build_prediction_frame_preserves_layout(self) -> None:
         target = pd.Series([1, 0], index=pd.Index([8, 3]))
         frame = build_prediction_frame(
@@ -72,6 +88,190 @@ class PipelineRefactorTests(unittest.TestCase):
         }
 
         self.assertEqual(_select_calibration_bases(records, calibration_config), ["lightgbm", "xgboost"])
+
+    def test_mnar_overlay_is_deterministic_and_self_dependent(self) -> None:
+        features = pd.DataFrame({"risk": [0.1, 0.2, 0.8, 0.9, 1.0], "other": [1, 2, 3, 4, 5]})
+        overlay_a, metadata_a = apply_mnar_overlay(
+            features,
+            target_columns=["risk"],
+            seed=7,
+            low_rate=0.0,
+            high_rate=1.0,
+            threshold_quantile=0.6,
+            tail="upper",
+        )
+        overlay_b, metadata_b = apply_mnar_overlay(
+            features,
+            target_columns=["risk"],
+            seed=7,
+            low_rate=0.0,
+            high_rate=1.0,
+            threshold_quantile=0.6,
+            tail="upper",
+        )
+
+        self.assertTrue(overlay_a.equals(overlay_b))
+        self.assertEqual(metadata_a["column_stats"], metadata_b["column_stats"])
+        self.assertFalse(pd.isna(overlay_a.loc[0, "risk"]))
+        self.assertTrue(pd.isna(overlay_a.loc[3, "risk"]))
+        self.assertTrue(pd.isna(overlay_a.loc[4, "risk"]))
+
+    def test_categorical_mnar_uses_configured_self_dependent_categories(self) -> None:
+        features = pd.DataFrame({"risk_band": ["rare", "common", "common", "other"]})
+        overlay, metadata = apply_mnar_overlay(
+            features,
+            target_columns=["risk_band"],
+            seed=7,
+            low_rate=0.0,
+            high_rate=1.0,
+            configured_categories={"risk_band": ["rare"]},
+        )
+
+        self.assertTrue(pd.isna(overlay.loc[0, "risk_band"]))
+        self.assertFalse(pd.isna(overlay.loc[1, "risk_band"]))
+        mechanism = metadata["column_stats"]["risk_band"]["mechanism"]
+        self.assertEqual(mechanism["mechanism_type"], "categorical_self_dependent")
+        self.assertEqual(mechanism["selected_categories"], ["rare"])
+
+    def test_mar_overlay_rejects_self_dependent_driver_target_pair(self) -> None:
+        with self.assertRaisesRegex(ValueError, "driver column distinct"):
+            apply_mar_overlay(
+                pd.DataFrame({"income": [1, 2, 3]}),
+                target_columns=["income"],
+                driver_column="income",
+                seed=7,
+            )
+
+    def test_default_structured_overlays_include_mar_and_mnar(self) -> None:
+        configs = default_structured_overlay_configs(
+            {
+                "robustness": {"columns": ["income", "age"]},
+                "mar": {"driver_column": "age", "target_columns": ["income"]},
+            }
+        )
+
+        self.assertEqual([item["name"] for item in configs], ["mar_primary", "mar_stress", "mnar_primary", "mnar_stress"])
+        self.assertEqual({item["kind"] for item in configs}, {"mar", "mnar"})
+        self.assertEqual(configs[2]["target_columns"], ["income", "age"])
+        self.assertEqual(configs[3]["target_columns"], ["income", "age"])
+
+    def test_adult_structured_overlay_config_matches_manuscript_mar_probe(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        payload = tomllib.loads(
+            (root / "configs" / "robustness" / "lineage_d9_06_adult_missingness_robustness.toml").read_text(
+                encoding="utf-8"
+            )
+        )
+        configs = default_structured_overlay_configs(payload)
+
+        self.assertEqual(configs[0]["driver_column"], "age")
+        self.assertEqual(configs[0]["target_columns"], ["workclass"])
+        self.assertEqual(configs[2]["target_columns"], ["workclass", "occupation", "native-country"])
+
+    def test_tabpfn_preprocessor_preserves_missing_values_and_unseen_categories(self) -> None:
+        try:
+            from lab.baselines import tabular
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"Optional baseline dependency unavailable: {exc}")
+
+        preprocessor = tabular._TabPFNFramePreprocessor(categorical_columns=["cat"], numerical_columns=["num"])
+        train = pd.DataFrame({"num": [1.0, None, 3.0], "cat": ["a", "b", None]})
+        train_array = preprocessor.fit_transform(train)
+        test_array = preprocessor.transform(pd.DataFrame({"num": [None, 4.0], "cat": ["c", "a"]}))
+
+        self.assertTrue(np.isnan(train_array[1, 0]))
+        self.assertTrue(np.isnan(train_array[2, 1]))
+        self.assertTrue(np.isnan(test_array[0, 0]))
+        self.assertTrue(np.isnan(test_array[0, 1]))
+        self.assertEqual(float(test_array[1, 1]), 0.0)
+        self.assertEqual(preprocessor.categorical_feature_indices, [1])
+
+    def test_tabpfn_resource_subsample_is_stratified_and_deterministic(self) -> None:
+        try:
+            from lab.baselines import tabular
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"Optional baseline dependency unavailable: {exc}")
+
+        y = np.asarray([0] * 80 + [1] * 20)
+        first = tabular._stratified_subsample_indices(y, max_train_rows=10, rng=np.random.default_rng(7))
+        second = tabular._stratified_subsample_indices(y, max_train_rows=10, rng=np.random.default_rng(7))
+
+        self.assertTrue(np.array_equal(first, second))
+        self.assertEqual(len(first), 10)
+        self.assertGreater(np.sum(y[first] == 0), 0)
+        self.assertGreater(np.sum(y[first] == 1), 0)
+
+    def test_tabpfn_constant_fallback_metadata_records_native_missingness(self) -> None:
+        try:
+            from lab.baselines import tabular
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"Optional baseline dependency unavailable: {exc}")
+
+        model = tabular._constant_probability_model(
+            {"implementation": "tabpfn.TabPFNClassifier"},
+            pd.DataFrame(index=[0]),
+            pd.DataFrame(index=[1]),
+            pd.Series([0, 1]),
+            fallback_reason="test",
+            fit_start=0.0,
+            extra_metadata={"native_missing_values": True, "categorical_feature_indices": [1]},
+        )
+
+        self.assertTrue(model.model_metadata["native_missing_values"])
+        self.assertEqual(model.model_metadata["categorical_feature_indices"], [1])
+
+    def test_all_model_significance_skips_partial_comparators(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        spec = importlib.util.spec_from_file_location("run_all_model_significance", root / "scripts" / "run_all_model_significance.py")
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"Optional significance dependency unavailable: {exc}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            raw_dir = Path(tmp) / "raw"
+            fake_spec = SimpleNamespace(
+                study_id="demo",
+                seed_list=[1, 2],
+                raw_dir=raw_dir,
+                configs={
+                    "method": {"method": {"name": "mait"}},
+                    "baselines": {"baseline": [{"name": "complete"}, {"name": "partial"}]},
+                    "robustness": {"slice": [{"name": "missingness_30"}]},
+                },
+            )
+            for seed in fake_spec.seed_list:
+                self._write_metric(raw_dir / "methods" / f"mait__seed_{seed}" / "metrics.json", 0.8 + seed * 0.01)
+                self._write_metric(raw_dir / "robustness" / f"mait__missingness_30__seed_{seed}" / "metrics.json", 0.7 + seed * 0.01)
+                self._write_metric(raw_dir / "baselines" / f"complete__seed_{seed}" / "metrics.json", 0.75 + seed * 0.01)
+                self._write_metric(raw_dir / "robustness" / f"complete__missingness_30__seed_{seed}" / "metrics.json", 0.65 + seed * 0.01)
+            self._write_metric(raw_dir / "baselines" / "partial__seed_1" / "metrics.json", 0.7)
+
+            payload = module._compute_study_significance(fake_spec)
+
+        self.assertEqual(payload["comparators"], ["complete"])
+        self.assertEqual(payload["skipped_comparators"][0]["comparator"], "partial")
+        self.assertEqual(payload["skipped_comparators"][0]["reason"], "missing_nominal_seed_artifacts")
+        self.assertTrue(payload["tests"])
+
+    def test_thresholded_metrics_use_validation_selected_threshold(self) -> None:
+        threshold = select_threshold_by_validation_f1(
+            y_true=[0, 0, 1, 1],
+            y_prob=[0.1, 0.4, 0.6, 0.9],
+        )
+        metrics = thresholded_classification_metrics(
+            y_true=[0, 1, 1, 0],
+            y_prob=[0.2, 0.7, 0.8, 0.3],
+            threshold=threshold,
+        )
+
+        self.assertGreaterEqual(threshold, 0.0)
+        self.assertLessEqual(threshold, 1.0)
+        self.assertEqual(metrics["tp"], 2.0)
+        self.assertEqual(metrics["tn"], 2.0)
 
     def test_write_run_artifacts_preserves_required_files_and_sorted_predictions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -365,6 +565,10 @@ class PipelineRefactorTests(unittest.TestCase):
                 [(spec, "run_baselines"), (spec, "run_method")],
             )
             handler.assert_not_called()
+
+    def _write_metric(self, path: Path, auroc: float) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"test_metrics": {"auroc": float(auroc)}}), encoding="utf-8")
 
     def _make_spec(self, root: Path, *, active_stages: list[str]) -> StudySpec:
         return StudySpec(

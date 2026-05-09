@@ -20,3 +20,10 @@ name = "missingness_30"
 kind = "missingness"
 severity = "high"
 additional_mask_rate = 0.3
+
+[mar]
+driver_column = "age"
+target_columns = ["workclass"]
+low_rate = 0.05
+high_rate = 0.35
+threshold_quantile = 0.5

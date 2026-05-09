@@ -27,6 +27,12 @@ ABLATION_CONFIG = ROOT / "configs" / "ablations" / "lineage_d9_06_adult_missingn
 
 
 class DraftCodeConsistencyTests(unittest.TestCase):
+    def _require_bundle_paths(self, *relative_paths: str) -> None:
+        missing = [relative_path for relative_path in relative_paths if not (ROOT / relative_path).exists()]
+        if missing:
+            missing_text = ", ".join(missing)
+            self.skipTest(f"Disclosure bundle excludes manuscript/result artifact path(s): {missing_text}")
+
     def test_masking_respects_augmentation_columns_and_observed_only(self) -> None:
         batch = {
             "numerical": torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32),
@@ -140,6 +146,7 @@ class DraftCodeConsistencyTests(unittest.TestCase):
         self.assertAlmostEqual(float(series[0]["points"][0]["y"]), 0.012, places=9)
 
     def test_manuscript_does_not_hardcode_calibration_bases_or_stale_repo_claims(self) -> None:
+        self._require_bundle_paths("access.tex")
         text = (ROOT / "access.tex").read_text(encoding="utf-8")
         self.assertNotIn("LightGBM & Nominal", text)
         self.assertNotIn("CatBoost & Nominal", text)
@@ -161,12 +168,13 @@ class DraftCodeConsistencyTests(unittest.TestCase):
             self.assertEqual(payload["comparators"], ["lightgbm", "xgboost"], msg=str(path))
 
     def test_baseline_calibration_counts_match_artifacts_and_manuscript(self) -> None:
+        self._require_bundle_paths("access.tex", "results")
         sigmoid_cases = 0
         sigmoid_improved_ece = 0
         isotonic_cases = 0
         isotonic_reduced_auroc = 0
 
-        for path in sorted((ROOT / "results").glob("*/aggregated/performance_summary.json")):
+        for path in sorted((ROOT / "results").glob("lineage_d9_*_missingness_robustness/aggregated/performance_summary.json")):
             payload = json.loads(path.read_text(encoding="utf-8"))
             for model_name, summary in payload["calibration_summary"].items():
                 if model_name.endswith("_calibrated_sigmoid"):
@@ -189,6 +197,7 @@ class DraftCodeConsistencyTests(unittest.TestCase):
         self.assertIn("isotonic calibration reduces AUROC in all ten cases", text)
 
     def test_mlp_only_ablation_and_manuscript_use_missingness_indicator_language(self) -> None:
+        self._require_bundle_paths("access.tex")
         payload = tomllib.loads(ABLATION_CONFIG.read_text(encoding="utf-8"))
         ablations = {entry["name"]: entry for entry in payload["ablation"]}
         mlp_only = ablations["mlp_only"]
@@ -203,6 +212,7 @@ class DraftCodeConsistencyTests(unittest.TestCase):
         self.assertIn("stochastic masking, reconstruction, and missingness indicators", text)
 
     def test_manuscript_uses_post_hoc_calibration_terminology(self) -> None:
+        self._require_bundle_paths("access.tex")
         text = (ROOT / "access.tex").read_text(encoding="utf-8")
         self.assertNotIn("calibration-head ablation", text)
         self.assertNotIn("sigmoid calibration head", text)
@@ -229,6 +239,42 @@ class DraftCodeConsistencyTests(unittest.TestCase):
         positions = [output.index(fragment) for fragment in expected_fragments]
         self.assertEqual(positions, sorted(positions))
 
+    def test_revision_full_dry_run_covers_reviewer_response_stages(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "run_all_studies.py"),
+                "--include-extras",
+                "--revision-full",
+                "--results-prefix",
+                "test_revision_full",
+                "--dry-run",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        output = completed.stdout
+        self.assertIn("# Results directory prefix: test_revision_full", output)
+        expected_fragments = [
+            "evaluate_structured_missingness.py --study-config configs/studies/lineage_d9_06_adult_missingness_robustness.toml",
+            "run_leakage_ablation.py --study-config configs/studies/lineage_d9_06_adult_missingness_robustness.toml",
+            "run_feature_stability.py --study-config configs/studies/lineage_d9_06_adult_missingness_robustness.toml",
+            "run_all_model_significance.py --study-glob configs/studies/*missingness_robustness*.toml",
+            "aggregate_revision_results.py --study-glob configs/studies/*missingness_robustness*.toml",
+        ]
+        positions = [output.index(fragment) for fragment in expected_fragments]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_revision_aggregator_emits_promised_manuscript_tables(self) -> None:
+        text = (ROOT / "scripts" / "aggregate_revision_results.py").read_text(encoding="utf-8")
+        self.assertIn("all_model_significance_table.tex", text)
+        self.assertIn("all_model_rank_table.tex", text)
+        self.assertIn("Native miss.", text)
+        self.assertIn("Preprocessing", text)
+        self.assertIn("train-only stats/vocabs", text)
+
     def test_confidence_band_script_no_longer_targets_canonical_manuscript_pdfs(self) -> None:
         text = (ROOT / "scripts" / "make_confidence_band_figures.py").read_text(encoding="utf-8")
         self.assertIn("degradation_curves_confidence_band_absolute.pdf", text)
@@ -237,6 +283,7 @@ class DraftCodeConsistencyTests(unittest.TestCase):
         self.assertNotIn('os.path.join(FIGURES_DIR, "degradation_curves_delta.pdf")', text)
 
     def test_manuscript_dataset_regime_matches_current_gmsc_artifacts(self) -> None:
+        self._require_bundle_paths("access.tex", "results")
         text = (ROOT / "access.tex").read_text(encoding="utf-8")
         metadata = json.loads(
             (
@@ -257,6 +304,7 @@ class DraftCodeConsistencyTests(unittest.TestCase):
         self.assertNotIn("6.7\\% positive", text)
 
     def test_manuscript_quoted_numbers_match_current_artifact_summaries(self) -> None:
+        self._require_bundle_paths("access.tex", "results", "paper")
         text = (ROOT / "access.tex").read_text(encoding="utf-8")
 
         def read_json(path: Path) -> object:
